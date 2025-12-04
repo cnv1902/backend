@@ -13,7 +13,7 @@ services:
 
       # Database
       - key: DATABASE_URL
-        sync: 'postgresql://neondb_owner:npg_0RL5afcNplGy@ep-cool-credit-a1qfzj69-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+        value: 'postgresql://neondb_owner:npg_0RL5afcNplGy@ep-cool-credit-a1qfzj69-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
 
       # Auth
       - key: JWT_SECRET_KEY
