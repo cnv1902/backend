@@ -1,10 +1,10 @@
 import random
-import resend
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 from .config import settings
 
-# Initialize Resend API
-if settings.RESEND_API_KEY:
-    resend.api_key = settings.RESEND_API_KEY
+# Configure Brevo API
+sib_api_v3_sdk.configuration.api_key['api-key'] = settings.BREVO_API_KEY
 
 
 def generate_otp() -> str:
@@ -13,8 +13,8 @@ def generate_otp() -> str:
 
 
 async def send_otp_email(to_email: str, otp_code: str):
-    """Send OTP code via Resend API."""
-    if not settings.RESEND_API_KEY:
+    """Send OTP code via Brevo API."""
+    if not settings.BREVO_API_KEY:
         print(f"[DEV MODE] OTP for {to_email}: {otp_code}")
         return
 
@@ -74,22 +74,28 @@ If you did not request this, please ignore this email.
     """
 
     try:
-        # Send email via Resend API
-        email_response = resend.Emails.send({
-            "from": f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM_ADDRESS}>",
-            "to": to_email,
-            "subject": "🔐 Password Reset OTP Code",
-            "html": html_body,
-            "text": text_body,
-        })
+        # Create SendSmtpEmail object
+        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+            to=[{"email": to_email}],
+            sender={"name": settings.EMAIL_FROM_NAME, "email": settings.EMAIL_FROM_ADDRESS},
+            subject="🔐 Password Reset OTP Code",
+            html_content=html_body,
+            text_content=text_body
+        )
         
-        if email_response.get("id"):
-            print(f"[EMAIL SENT] OTP sent to {to_email}, message_id={email_response['id']}")
+        # Send email via Brevo API
+        api_instance = sib_api_v3_sdk.TransactionalEmailsApi()
+        email_response = api_instance.send_transac_email(send_smtp_email)
+        
+        if email_response and hasattr(email_response, 'message_id'):
+            print(f"[EMAIL SENT] OTP sent to {to_email}, message_id={email_response.message_id}")
         else:
-            print(f"[EMAIL ERROR] Failed to send to {to_email}: {email_response}")
-            print(f"[DEV MODE FALLBACK] OTP for {to_email}: {otp_code}")
-            raise Exception(str(email_response))
+            print(f"[EMAIL SENT] OTP sent to {to_email}")
             
+    except ApiException as e:
+        print(f"[EMAIL ERROR] Failed to send to {to_email}: {str(e)}")
+        print(f"[DEV MODE FALLBACK] OTP for {to_email}: {otp_code}")
+        raise
     except Exception as e:
         print(f"[EMAIL ERROR] Failed to send to {to_email}: {str(e)}")
         print(f"[DEV MODE FALLBACK] OTP for {to_email}: {otp_code}")

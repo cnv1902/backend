@@ -13,9 +13,9 @@ class Settings:
 
     CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "*")
 
-    # Resend Email API
-    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
-    EMAIL_FROM_ADDRESS: str = os.getenv("EMAIL_FROM_ADDRESS", "onboarding@resend.dev")
+    # Brevo Email API
+    BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
+    EMAIL_FROM_ADDRESS: str = os.getenv("EMAIL_FROM_ADDRESS", "noreply@example.com")
     EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "Revit Key Management")
 
     OTP_EXPIRE_MINUTES: int = int(os.getenv("OTP_EXPIRE_MINUTES", "10"))
