@@ -1,10 +1,6 @@
 import random
-import sib_api_v3_sdk
-from sib_api_v3_sdk.rest import ApiException
+import aiohttp
 from .config import settings
-
-# Configure Brevo API
-sib_api_v3_sdk.configuration.api_key['api-key'] = settings.BREVO_API_KEY
 
 
 def generate_otp() -> str:
@@ -74,28 +70,40 @@ If you did not request this, please ignore this email.
     """
 
     try:
-        # Create SendSmtpEmail object
-        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
-            to=[{"email": to_email}],
-            sender={"name": settings.EMAIL_FROM_NAME, "email": settings.EMAIL_FROM_ADDRESS},
-            subject="🔐 Password Reset OTP Code",
-            html_content=html_body,
-            text_content=text_body
-        )
+        # Prepare Brevo API request
+        headers = {
+            "api-key": settings.BREVO_API_KEY,
+            "Content-Type": "application/json"
+        }
         
-        # Send email via Brevo API
-        api_instance = sib_api_v3_sdk.TransactionalEmailsApi()
-        email_response = api_instance.send_transac_email(send_smtp_email)
+        payload = {
+            "sender": {
+                "name": settings.EMAIL_FROM_NAME,
+                "email": settings.EMAIL_FROM_ADDRESS
+            },
+            "to": [{"email": to_email}],
+            "subject": "🔐 Password Reset OTP Code",
+            "htmlContent": html_body,
+            "textContent": text_body
+        }
         
-        if email_response and hasattr(email_response, 'message_id'):
-            print(f"[EMAIL SENT] OTP sent to {to_email}, message_id={email_response.message_id}")
-        else:
-            print(f"[EMAIL SENT] OTP sent to {to_email}")
-            
-    except ApiException as e:
-        print(f"[EMAIL ERROR] Failed to send to {to_email}: {str(e)}")
-        print(f"[DEV MODE FALLBACK] OTP for {to_email}: {otp_code}")
-        raise
+        # Send email via Brevo API using HTTP
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.brevo.com/v3/smtp/email",
+                json=payload,
+                headers=headers
+            ) as response:
+                result = await response.json()
+                
+                if response.status == 201:
+                    message_id = result.get('messageId', 'unknown')
+                    print(f"[EMAIL SENT] OTP sent to {to_email}, message_id={message_id}")
+                else:
+                    print(f"[EMAIL ERROR] Failed to send to {to_email}: {result}")
+                    print(f"[DEV MODE FALLBACK] OTP for {to_email}: {otp_code}")
+                    raise Exception(f"Brevo API error: {result}")
+                    
     except Exception as e:
         print(f"[EMAIL ERROR] Failed to send to {to_email}: {str(e)}")
         print(f"[DEV MODE FALLBACK] OTP for {to_email}: {otp_code}")
