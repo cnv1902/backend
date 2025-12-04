@@ -1,9 +1,10 @@
 import random
-import aiosmtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.utils import formataddr
+import resend
 from .config import settings
+
+# Initialize Resend API
+if settings.RESEND_API_KEY:
+    resend.api_key = settings.RESEND_API_KEY
 
 
 def generate_otp() -> str:
@@ -12,31 +13,11 @@ def generate_otp() -> str:
 
 
 async def send_otp_email(to_email: str, otp_code: str):
-    """Send OTP code via email."""
-    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+    """Send OTP code via Resend API."""
+    if not settings.RESEND_API_KEY:
         print(f"[DEV MODE] OTP for {to_email}: {otp_code}")
         return
 
-    message = MIMEMultipart("alternative")
-    message["From"] = formataddr((settings.SMTP_FROM_NAME, settings.SMTP_FROM_EMAIL))
-    message["To"] = to_email
-    message["Subject"] = "🔐 Password Reset OTP Code"
-
-    # Plain text version
-    text_body = f"""
-Password Reset Request
-
-Your OTP code is: {otp_code}
-
-This code will expire in {settings.OTP_EXPIRE_MINUTES} minutes.
-
-If you did not request this, please ignore this email.
-
----
-{settings.SMTP_FROM_NAME}
-    """
-
-    # HTML version
     html_body = f"""
     <!DOCTYPE html>
     <html>
@@ -71,7 +52,7 @@ If you did not request this, please ignore this email.
                 
                 <div class="footer">
                     <p>---</p>
-                    <p>{settings.SMTP_FROM_NAME}</p>
+                    <p>{settings.EMAIL_FROM_NAME}</p>
                 </div>
             </div>
         </div>
@@ -79,21 +60,38 @@ If you did not request this, please ignore this email.
     </html>
     """
 
-    # Attach both versions
-    message.attach(MIMEText(text_body, "plain", "utf-8"))
-    message.attach(MIMEText(html_body, "html", "utf-8"))
+    text_body = f"""
+Password Reset Request
+
+Your OTP code is: {otp_code}
+
+This code will expire in {settings.OTP_EXPIRE_MINUTES} minutes.
+
+If you did not request this, please ignore this email.
+
+---
+{settings.EMAIL_FROM_NAME}
+    """
 
     try:
-        await aiosmtplib.send(
-            message,
-            hostname=settings.SMTP_HOST,
-            port=settings.SMTP_PORT,
-            username=settings.SMTP_USER,
-            password=settings.SMTP_PASSWORD.strip('"'),  # Remove quotes if present
-            start_tls=True,
-        )
-        print(f"[EMAIL SENT] OTP sent to {to_email}")
+        # Send email via Resend API
+        email_response = resend.Emails.send({
+            "from": f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM_ADDRESS}>",
+            "to": to_email,
+            "subject": "🔐 Password Reset OTP Code",
+            "html": html_body,
+            "text": text_body,
+        })
+        
+        if email_response.get("id"):
+            print(f"[EMAIL SENT] OTP sent to {to_email}, message_id={email_response['id']}")
+        else:
+            print(f"[EMAIL ERROR] Failed to send to {to_email}: {email_response}")
+            print(f"[DEV MODE FALLBACK] OTP for {to_email}: {otp_code}")
+            raise Exception(str(email_response))
+            
     except Exception as e:
         print(f"[EMAIL ERROR] Failed to send to {to_email}: {str(e)}")
         print(f"[DEV MODE FALLBACK] OTP for {to_email}: {otp_code}")
         raise
+
