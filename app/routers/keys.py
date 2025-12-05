@@ -35,6 +35,7 @@ def create_key(payload: KeyCreateRequest, db: Session = Depends(get_db)):
         key_value=key_value,
         is_active=True,
         expired_at=_expiry_for_type(payload.type),
+        type=payload.type,
         note=payload.note,
         created_at=datetime.utcnow(),
     )
