@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from pydantic import BaseModel, Field
@@ -10,6 +11,9 @@ from ..models.update_version import UpdateVersion, UpdateStatistic
 from ..models.user import User
 import hashlib
 import os
+import zipfile
+import tempfile
+from pathlib import Path
 
 router = APIRouter(prefix="/updates", tags=["updates"])
 
@@ -76,6 +80,40 @@ def parse_version(version_str: str) -> tuple:
     while len(parts) < 4:
         parts.append('0')
     return tuple(int(p) for p in parts[:4])
+
+def create_release_zip(version: UpdateVersion, repo_path: str) -> str:
+    """
+    Tạo ZIP file chứa SimpleBIM.dll, SimpleBIM.pdb và install.exe từ repo
+    Returns: đường dẫn tới file ZIP được tạo
+    """
+    temp_dir = tempfile.mkdtemp()
+    zip_path = os.path.join(temp_dir, f"SimpleBIM_v{version.version}.zip")
+    
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # 1. Thêm SimpleBIM.dll từ Releases folder
+            dll_path = os.path.join(repo_path, f"Releases/{version.version}/SimpleBIM.dll")
+            if os.path.exists(dll_path):
+                zipf.write(dll_path, arcname="SimpleBIM.dll")
+            
+            # 2. Thêm SimpleBIM.pdb từ Releases folder
+            pdb_path = os.path.join(repo_path, f"Releases/{version.version}/SimpleBIM.pdb")
+            if os.path.exists(pdb_path):
+                zipf.write(pdb_path, arcname="SimpleBIM.pdb")
+            
+            # 3. Luôn thêm install.exe từ Installer folder
+            exe_path = os.path.join(repo_path, "Installer/SimpleBIM.Installer.exe")
+            if os.path.exists(exe_path):
+                zipf.write(exe_path, arcname="SimpleBIM.Installer.exe")
+            
+            # 4. Thêm config file nếu có
+            config_path = os.path.join(repo_path, "Installer/SimpleBIM.Installer.exe.config")
+            if os.path.exists(config_path):
+                zipf.write(config_path, arcname="SimpleBIM.Installer.exe.config")
+        
+        return zip_path
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi tạo ZIP: {str(e)}")
 
 # ==================== Public Endpoints (No Auth) ====================
 
@@ -381,6 +419,84 @@ async def calculate_file_checksum(
             "checksum_sha256": checksum,
             "file_size_bytes": file_size,
             "file_size_mb": round(file_size / (1024 * 1024), 2)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
+
+
+# ==================== Public Download Endpoint ====================
+
+@router.get("/versions/{version_id}/download")
+async def download_version(
+    version_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Download phiên bản SimpleBIM dưới dạng ZIP
+    Tự động tạo ZIP chứa SimpleBIM.dll, .pdb và install.exe
+    """
+    try:
+        # Lấy thông tin version từ database
+        version = db.query(UpdateVersion).filter(UpdateVersion.id == version_id).first()
+        if not version:
+            raise HTTPException(status_code=404, detail="Version not found")
+        
+        # Xác định đường dẫn repo
+        # Giả sử backend folder là c:\Users\...\SimpleBIM - Copy\Web\backend
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        repo_path = os.path.dirname(backend_dir)  # c:\Users\...\SimpleBIM - Copy\Web
+        repo_root = os.path.dirname(repo_path)   # c:\Users\...\SimpleBIM - Copy
+        
+        # Tạo ZIP file
+        zip_path = create_release_zip(version, repo_root)
+        
+        # Log download statistic
+        stat = UpdateStatistic(
+            machine_hash="browser_download",
+            target_version=version.version,
+            action="download",
+            status="web_started"
+        )
+        db.add(stat)
+        db.commit()
+        
+        # Trả về file để download
+        return FileResponse(
+            path=zip_path,
+            filename=f"SimpleBIM_v{version.version}.zip",
+            media_type="application/zip"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi tải xuống: {str(e)}")
+
+
+@router.post("/versions/{version_id}/download-tracked")
+async def track_download(
+    version_id: int,
+    machine_hash: str = None,
+    db: Session = Depends(get_db)
+):
+    """Track download action từ Downloads.js page"""
+    try:
+        version = db.query(UpdateVersion).filter(UpdateVersion.id == version_id).first()
+        if not version:
+            raise HTTPException(status_code=404, detail="Version not found")
+        
+        stat = UpdateStatistic(
+            machine_hash=machine_hash or "unknown",
+            target_version=version.version,
+            action="download",
+            status="web_tracked"
+        )
+        db.add(stat)
+        db.commit()
+        
+        return {
+            "status": "success",
+            "version": version.version,
+            "download_url": f"/updates/versions/{version_id}/download"
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
