@@ -1,8 +1,15 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
 import jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
+from sqlalchemy.orm import Session
+
 from .config import settings
+from .database import get_db
+from ..models.user import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__truncate_error=False)
 
@@ -21,3 +28,31 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
+
+# HTTP bearer auth scheme reused across routers
+http_bearer = HTTPBearer(auto_error=True)
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(http_bearer),
+    db: Session = Depends(get_db),
+):
+    """Decode JWT from Authorization header and return the current user."""
+
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return user

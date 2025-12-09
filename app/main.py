@@ -6,8 +6,10 @@ from .core.config import settings
 from .core.security import get_password_hash
 from .models.user import User
 from .models.otp import OTPRecord
+from .models.update_version import UpdateVersion, UpdateStatistic
 from .routers.auth import router as auth_router
 from .routers.keys import router as keys_router
+from .routers.updates import router as updates_router
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -40,6 +42,7 @@ with SessionLocal() as db:
 # Routers
 app.include_router(auth_router)
 app.include_router(keys_router)
+app.include_router(updates_router)
 
 @app.get("/")
 def root():
