@@ -32,6 +32,7 @@ def get_password_hash(password: str) -> str:
 
 # HTTP bearer auth scheme reused across routers
 http_bearer = HTTPBearer(auto_error=True)
+http_bearer_optional = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
@@ -55,4 +56,29 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+    return user
+
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(http_bearer_optional),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """
+    Decode JWT từ header nhưng KHÔNG bắt buộc login.
+    Trả về User nếu có token hợp lệ, None nếu không có token.
+    Dùng cho các endpoint cho phép anonymous access.
+    """
+    if credentials is None:
+        return None
+    
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+    except (jwt.ExpiredSignatureError, jwt.PyJWTError):
+        return None
+
+    user = db.query(User).filter(User.id == int(user_id)).first()
     return user

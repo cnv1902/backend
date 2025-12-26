@@ -7,9 +7,11 @@ from .core.security import get_password_hash
 from .models.user import User
 from .models.otp import OTPRecord
 from .models.update_version import UpdateVersion, UpdateStatistic
+from .models.chat import ChatSession, ChatMessage, CachedQuery  # NEW: Chat models
 from .routers.auth import router as auth_router
 from .routers.keys import router as keys_router
 from .routers.updates import router as updates_router
+from .routers.chat import router as chat_router  # NEW: Chat router
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -43,6 +45,7 @@ with SessionLocal() as db:
 app.include_router(auth_router)
 app.include_router(keys_router)
 app.include_router(updates_router)
+app.include_router(chat_router)  # NEW: Chat API endpoints
 
 @app.get("/")
 def root():
