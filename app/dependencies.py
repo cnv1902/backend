@@ -18,6 +18,6 @@ def admin_required(credentials: HTTPAuthorizationCredentials = Depends(bearer_sc
         raise HTTPException(status_code=401, detail="Invalid token")
 
     user = db.query(User).filter(User.id == user_id).first()
-    if not user or user.username != "admin":
-        raise HTTPException(status_code=403, detail="Admin required")
+    if not user:
+        raise HTTPException(status_code=403, detail="User not found")
     return True
